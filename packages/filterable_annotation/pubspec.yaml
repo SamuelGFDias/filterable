@@ -1,6 +1,6 @@
 name: filterable_annotation
 description: " Anotações para geração automática de filtros e ordenações com source_gen."
-version: 0.1.0
+version: 0.2.0
 repository: https://github.com/SamuelGFDias/filterable
 homepage: https://github.com/SamuelGFDias/filterable/tree/master/packages/filterable_annotation
 
