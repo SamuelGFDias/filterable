@@ -1,0 +1,15 @@
+targets:
+  $default:
+    builders:
+      filterable_generator|filterableBuilder:
+        generate_for:
+          - lib/**.dart
+
+builders:
+  filterableBuilder:
+    import: "package:filterable_generator/builder.dart"
+    builder_factories: ["filterableBuilder"]
+    build_extensions: {".dart": [".filterable.g.dart"]}
+    auto_apply: dependents
+    build_to: source
+    applies_builders: ["source_gen|combining_builder"]
