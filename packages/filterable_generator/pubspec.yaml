@@ -11,7 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-  source_gen: ^1.5.0
+  source_gen: ^2.0.0
   analyzer: ^6.2.0
   build: ^2.4.1
   filterable_annotation: ^0.2.0
