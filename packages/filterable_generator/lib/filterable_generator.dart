@@ -7,10 +7,10 @@ import 'package:source_gen/source_gen.dart';
 class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
   @override
   String generateForAnnotatedElement(
-      Element element,
-      ConstantReader annotation,
-      BuildStep buildStep,
-      ) {
+    Element element,
+    ConstantReader annotation,
+    BuildStep buildStep,
+  ) {
     if (element is! ClassElement) return '';
 
     final className = element.name;
@@ -19,16 +19,33 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     buffer.writeln('// ignore_for_file: dead_code');
     buffer.writeln('extension ${className}FilterExtension on $className {');
 
+    // Início do buildPredicate
     buffer.writeln(
         '  static bool Function($className) buildPredicate(FilterCriteria criteria) {');
     buffer.writeln('    switch (criteria.field) {');
 
+    // Buffer para a lista de metadados (filterableFields)
     final fieldInfoBuffer = StringBuffer();
     fieldInfoBuffer.writeln('  static List<FilterableFieldInfo> get filterableFields => [');
 
-    for (final field in element.fields.where((f) => f.metadata.isNotEmpty)) {
+    // Loop corrigido para iterar campos e acessar metadados seguramente
+    for (final field in element.fields) {
+      // FIX: Cast explícito via dynamic para resolver conflito de tipo 'Metadata' vs 'List<ElementAnnotation>'
+      final List<ElementAnnotation> fieldMetadata = (field.metadata as dynamic) as List<ElementAnnotation>;
+
+      // Evita erros se o campo não tiver anotações
+      if (fieldMetadata.isEmpty) continue;
+
+      // Pega a primeira anotação (assumindo que é a @FilterableField ou similar)
+      final firstAnnotation = fieldMetadata.first;
+      final constantValue = firstAnnotation.computeConstantValue();
+
+      // Se não for uma constante válida, pula
+      if (constantValue == null) continue;
+
+      final metadata = ConstantReader(constantValue);
       final fieldName = field.name;
-      final metadata = ConstantReader(field.metadata.first.computeConstantValue());
+      
       final label = metadata.peek('label')?.stringValue ?? fieldName;
       final comparators = metadata
           .peek('comparators')
@@ -36,23 +53,28 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
           .map((v) => v.toStringValue())
           .whereType<String>()
           .toList();
-      final constantValue = field.metadata.first.computeConstantValue();
-      final customCompareValue = constantValue?.getField('customCompare');
+
+      final customCompareValue = constantValue.getField('customCompare');
       final comparatorFuncName = customCompareValue?.toFunctionValue()?.name;
-      final comparatorsType = constantValue?.getField('comparatorsType');
-      final comparatorTypeName = comparatorsType?.toTypeValue()?.getDisplayString();
+      final comparatorsType = constantValue.getField('comparatorsType');
+      final comparatorTypeName = comparatorsType?.toTypeValue()?.getDisplayString(); // Ajuste para versões novas do analyzer
 
       final isList = field.type.isDartCoreList;
-      final listItemType = isList
-          ? (field.type as ParameterizedType).typeArguments.first.getDisplayString()
-          : null;
+      // Ajuste seguro para pegar tipos genéricos
+      String? listItemType;
+      if (isList && field.type is ParameterizedType) {
+        final typeArgs = (field.type as ParameterizedType).typeArguments;
+        if (typeArgs.isNotEmpty) {
+          listItemType = typeArgs.first.getDisplayString();
+        }
+      }
 
       final typeName = field.type.getDisplayString();
       final ops = comparators ?? _defaultComparatorsForType(typeName, isList);
 
       buffer.writeln("      case '$fieldName':");
 
-      // Checagem de tipo
+      // Lógica de Comparadores
       buffer.writeln("        switch (criteria.comparator) {");
 
       if (isList) {
@@ -62,10 +84,16 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
 
         buffer.writeln("          case 'contains':");
         buffer.writeln("          case 'notContains': {");
-        buffer.writeln("            if (criteria.value is! $valueCastType) {");
-        buffer.writeln("              throw ArgumentError('Expected value of type $valueCastType for field $fieldName');");
-        buffer.writeln("            }");
-        buffer.writeln("            final value = criteria.value as $valueCastType;");
+        // Validação de tipo em runtime
+        if (valueCastType != null) {
+            buffer.writeln("            if (criteria.value is! $valueCastType) {");
+            buffer.writeln("              throw ArgumentError('Expected value of type $valueCastType for field $fieldName');");
+            buffer.writeln("            }");
+            buffer.writeln("            final value = criteria.value as $valueCastType;");
+        } else {
+             buffer.writeln("            final value = criteria.value;");
+        }
+
         if (comparatorFuncName != null) {
           buffer.writeln("            return criteria.comparator == 'contains'");
           buffer.writeln("              ? (e) => e.$fieldName.any((item) => $className.$comparatorFuncName(item, value))");
@@ -91,6 +119,7 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
         buffer.writeln("              throw ArgumentError('Expected value of type $typeCast for field $fieldName');");
         buffer.writeln("            }");
         buffer.writeln("            final value = criteria.value as $typeCast;");
+        
         for (final op in ops) {
           if (comparatorFuncName != null) {
             final comparison = op == '!='
@@ -111,7 +140,7 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
       buffer.writeln("        }");
       buffer.writeln("        break;");
 
-      // Adiciona ao metadata
+      // Adiciona info ao array estático
       fieldInfoBuffer.writeln('    FilterableFieldInfo(');
       fieldInfoBuffer.writeln("      field: '$fieldName',");
       fieldInfoBuffer.writeln("      label: '$label',");
@@ -120,36 +149,44 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
       fieldInfoBuffer.writeln('    ),');
     }
 
-    buffer.writeln('    }');
+    buffer.writeln('    }'); // Fecha switch field
     buffer.writeln('    return (_) => true;');
-    buffer.writeln('  }');
+    buffer.writeln('  }'); // Fecha buildPredicate
 
     // buildSorter
     buffer.writeln('  static int Function($className, $className) buildSorter(SortCriteria criteria) {');
     buffer.writeln('    switch (criteria.field) {');
-    for (final field in element.fields.where((f) => f.metadata.isNotEmpty)) {
+    
+    // Reutiliza loop para sorter
+    for (final field in element.fields) {
+      // FIX: Cast explícito via dynamic também aqui
+      final List<ElementAnnotation> fieldMetadata = (field.metadata as dynamic) as List<ElementAnnotation>;
+      if (fieldMetadata.isEmpty) continue;
+      
       final fieldName = field.name;
       final isList = field.type.isDartCoreList;
+      
+      buffer.writeln("      case '$fieldName':");
       if (isList) {
-        buffer.writeln("      case '$fieldName':");
         buffer.writeln('        return (a, b) => criteria.ascending');
         buffer.writeln('            ? a.$fieldName.length.compareTo(b.$fieldName.length)');
         buffer.writeln('            : b.$fieldName.length.compareTo(a.$fieldName.length);');
       } else {
-        buffer.writeln("      case '$fieldName':");
         buffer.writeln('        return (a, b) => criteria.ascending');
         buffer.writeln('            ? a.$fieldName.compareTo(b.$fieldName)');
         buffer.writeln('            : b.$fieldName.compareTo(a.$fieldName);');
       }
     }
+    
     buffer.writeln('    }');
     buffer.writeln('    return (a, b) => 0;');
     buffer.writeln('  }');
 
-    // Metadados dos campos
+    // Fecha lista de metadados
     fieldInfoBuffer.writeln('  ];');
     buffer.writeln(fieldInfoBuffer.toString());
-    buffer.writeln('}');
+    
+    buffer.writeln('}'); // Fecha extension
 
     return buffer.toString();
   }
@@ -158,7 +195,10 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     if (isList) {
       return ['contains', 'notContains', 'length==', 'length!=', 'length>', 'length<', 'length>=', 'length<='];
     }
-    switch (type) {
+    // Tratamento básico para remover sufixos de nullability '?' se existirem na string do tipo
+    final cleanType = type.endsWith('?') ? type.substring(0, type.length - 1) : type;
+    
+    switch (cleanType) {
       case 'String':
         return ['==', '!=', 'contains', 'startsWith', 'endsWith'];
       case 'int':
