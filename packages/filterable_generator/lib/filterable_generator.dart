@@ -1,4 +1,4 @@
-import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/dart/element/element2.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:build/build.dart';
 import 'package:filterable_annotation/filterable.dart';
@@ -7,13 +7,14 @@ import 'package:source_gen/source_gen.dart';
 class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
   @override
   String generateForAnnotatedElement(
-    Element element,
+    Element2 element,
     ConstantReader annotation,
     BuildStep buildStep,
   ) {
-    if (element is! ClassElement) return '';
+    if (element is! ClassElement2) return '';
 
-    final className = element.name;
+    // Analyzer 7+ usa 'name3' para o identificador da classe
+    final className = element.name3 ?? '';
     final buffer = StringBuffer();
 
     buffer.writeln('// ignore_for_file: dead_code');
@@ -28,15 +29,15 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     final fieldInfoBuffer = StringBuffer();
     fieldInfoBuffer.writeln('  static List<FilterableFieldInfo> get filterableFields => [');
 
-    // Loop corrigido para iterar campos e acessar metadados seguramente
-    for (final field in element.fields) {
-      // FIX: Cast explícito via dynamic para resolver conflito de tipo 'Metadata' vs 'List<ElementAnnotation>'
-      final List<ElementAnnotation> fieldMetadata = (field.metadata as dynamic) as List<ElementAnnotation>;
+    // Analyzer 7+: Use 'fields2' em vez de 'fields'
+    for (final field in element.fields2) {
+      // Analyzer 7+: Acesso a metadados via 'metadata2.annotations'
+      final fieldMetadata = field.metadata2.annotations;
 
       // Evita erros se o campo não tiver anotações
       if (fieldMetadata.isEmpty) continue;
 
-      // Pega a primeira anotação (assumindo que é a @FilterableField ou similar)
+      // Pega a primeira anotação
       final firstAnnotation = fieldMetadata.first;
       final constantValue = firstAnnotation.computeConstantValue();
 
@@ -44,7 +45,7 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
       if (constantValue == null) continue;
 
       final metadata = ConstantReader(constantValue);
-      final fieldName = field.name;
+      final fieldName = field.name3; // name3 é preferível
       
       final label = metadata.peek('label')?.stringValue ?? fieldName;
       final comparators = metadata
@@ -55,15 +56,18 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
           .toList();
 
       final customCompareValue = constantValue.getField('customCompare');
-      final comparatorFuncName = customCompareValue?.toFunctionValue()?.name;
+      final comparatorFuncName = customCompareValue?.toFunctionValue2()?.name3; // name3 aqui também
       final comparatorsType = constantValue.getField('comparatorsType');
-      final comparatorTypeName = comparatorsType?.toTypeValue()?.getDisplayString(); // Ajuste para versões novas do analyzer
+      
+      // Analyzer 6/7: getDisplayString requer withNullability
+      final comparatorTypeName = comparatorsType?.toTypeValue()?.getDisplayString();
 
       final isList = field.type.isDartCoreList;
-      // Ajuste seguro para pegar tipos genéricos
+      
       String? listItemType;
-      if (isList && field.type is ParameterizedType) {
-        final typeArgs = (field.type as ParameterizedType).typeArguments;
+      // Analyzer 7+: ParameterizedType foi substituído/unificado em InterfaceType para generics
+      if (isList && field.type is InterfaceType) {
+        final typeArgs = (field.type as InterfaceType).typeArguments;
         if (typeArgs.isNotEmpty) {
           listItemType = typeArgs.first.getDisplayString();
         }
@@ -158,12 +162,11 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     buffer.writeln('    switch (criteria.field) {');
     
     // Reutiliza loop para sorter
-    for (final field in element.fields) {
-      // FIX: Cast explícito via dynamic também aqui
-      final List<ElementAnnotation> fieldMetadata = (field.metadata as dynamic) as List<ElementAnnotation>;
+    for (final field in element.fields2) {
+      final fieldMetadata = field.metadata2.annotations;
       if (fieldMetadata.isEmpty) continue;
       
-      final fieldName = field.name;
+      final fieldName = field.name3;
       final isList = field.type.isDartCoreList;
       
       buffer.writeln("      case '$fieldName':");

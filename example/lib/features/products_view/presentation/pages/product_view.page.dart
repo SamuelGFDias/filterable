@@ -23,7 +23,7 @@ class _DataPageState extends ConsumerState<ProductViewPage> {
   }
 
   _initialize() async {
-    ref.read(productNotifierProvider.notifier).refresh();
+    ref.read(productProvider.notifier).refresh();
   }
 
   @override
@@ -39,7 +39,7 @@ class _DataPageState extends ConsumerState<ProductViewPage> {
         actions: [
           FilterSortMenu<Product>(
             onUpdate:
-                ref.read(filterCriteriaNotifierProvider.notifier).updateFilters,
+                ref.read(filterCriteriaProvider.notifier).updateFilters,
             fields: ProductFilterExtension.filterableFields,
           ),
         ],
@@ -47,7 +47,7 @@ class _DataPageState extends ConsumerState<ProductViewPage> {
       body: RefreshIndicator(
         color: Colors.white,
         onRefresh:
-            () async => ref.read(productNotifierProvider.notifier).refresh(),
+            () async => ref.read(productProvider.notifier).refresh(),
         child: ListView(
           children: [
             ...products.map(

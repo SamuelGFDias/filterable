@@ -26,7 +26,7 @@ class FilterSortContentState<T> extends ConsumerState<FilterSortContent<T>> {
 
   @override
   void initState() {
-    final state = ref.read(filterCriteriaNotifierProvider);
+    final state = ref.read(filterCriteriaProvider);
     filters.addAll(state.filters);
     sorts.addAll(state.sorts);
     super.initState();
