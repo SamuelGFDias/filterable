@@ -15,3 +15,8 @@
 ## 0.4.0
 
 - Compatibilidade com versões mais recentes do flutter
+
+
+## 0.4.1
+
+- Correções na geração dos arquivos
