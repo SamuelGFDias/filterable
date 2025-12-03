@@ -30,7 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  filterable_annotation: ^0.2.0
+  filterable_annotation:
+    path: ../packages/filterable_annotation
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^3.0.3
   riverpod_annotation: ^3.0.3
