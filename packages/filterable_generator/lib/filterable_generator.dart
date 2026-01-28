@@ -323,9 +323,11 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     }
   }
 
-  void _generateBuildSorter(StringBuffer buffer,
-      String className,
-      List<_FilterableFieldInfo> fields,) {
+  void _generateBuildSorter(
+    StringBuffer buffer,
+    String className,
+    List<_FilterableFieldInfo> fields,
+  ) {
     buffer.writeln(
         '  static int Function($className, $className) buildSorter(SortCriteria criteria) {');
     buffer.writeln('    switch (criteria.field) {');
@@ -423,10 +425,12 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     }
   }
 
-  String _buildComparisonExpression(String op,
-      String left,
-      String right,
-      bool isNullable,) {
+  String _buildComparisonExpression(
+    String op,
+    String left,
+    String right,
+    bool isNullable,
+  ) {
     // Se for nulo, a maioria das operações (exceto !=) deve retornar false.
     // Usamos o operador '!' apenas se soubermos que o campo é nullable,
     // para evitar warnings de "unnecessary non-null assertion".
@@ -458,7 +462,6 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
         return 'false';
     }
   }
-
 }
 
 /// Internal class to hold information about a filterable field.
