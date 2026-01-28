@@ -346,11 +346,11 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
 
         // No Freezed, campos opcionais podem ser nulos.
         // Se um valor for nulo, tratamos como "menor que todos" usando um fallback.
-        final fallback = field.isEnum ||
-                field.typeName == 'int' ||
-                field.typeName == 'double'
-            ? '-1'
-            : 'null';
+        // final fallback = field.isEnum ||
+        //         field.typeName == 'int' ||
+        //         field.typeName == 'double'
+        //     ? '-1'
+        //     : 'null';
 
         buffer.writeln('        return (a, b) {');
         buffer.writeln('          final valA = a.${field.fieldName}$suffix;');
