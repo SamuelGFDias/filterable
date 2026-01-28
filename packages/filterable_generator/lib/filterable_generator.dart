@@ -49,9 +49,22 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
       }
     }
 
-    // 2. Processa campos da classe (Foco em classes padrão)
+    // 2. O PULO DO GATO: Se for Freezed Union, percorre os outros factory constructors
+    for (final constructor in element.constructors) {
+      if (constructor.isFactory) {
+        for (final p in constructor.parameters) {
+          // Se o campo já foi adicionado, não sobrescreve (evita duplicados em Unions)
+          if (fieldsMap.containsKey(p.name)) continue;
+
+          final info = _parseElement(p, p.type, p.name);
+          if (info != null) fieldsMap[p.name] = info;
+        }
+      }
+    }
+
+    // 3. Mantém a busca por campos físicos (para classes normais)
     for (final field in element.fields) {
-      // Se já pegamos via construtor, não sobrescrevemos a menos que o campo tenha metadados próprios
+      if (fieldsMap.containsKey(field.name)) continue;
       final info = _parseElement(field, field.type, field.name);
       if (info != null) fieldsMap[field.name] = info;
     }
