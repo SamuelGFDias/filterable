@@ -1,3 +1,9 @@
+## 1.1.0
+
+- Freezed support
+- Improved null safety handling
+- Enhanced generated code structure
+
 ## 1.0.0
 
 ### 🎉 Production Release

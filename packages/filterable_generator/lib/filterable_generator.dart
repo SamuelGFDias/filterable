@@ -38,76 +38,90 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
   /// This method is compatible with both old and new analyzer versions,
   /// handling the transition from Element to Element2 gracefully.
   List<_FilterableFieldInfo> _extractFilterableFields(ClassElement element) {
-    final fields = <_FilterableFieldInfo>[];
+    final fieldsMap = <String, _FilterableFieldInfo>{};
 
-    for (final field in element.fields) {
-      // Compatible with both analyzer versions that may use Element or Element2
-      final fieldMetadata = _getFieldMetadata(field);
-
-      if (fieldMetadata.isEmpty) continue;
-
-      final filterMetadata = fieldMetadata.where((m) {
-        final constantValue = m.computeConstantValue();
-        if (constantValue == null) return false;
-        return constantValue.type?.getDisplayString(withNullability: false) ==
-            'FilterableField';
-      }).toList();
-
-      if (filterMetadata.isEmpty) continue;
-
-      final firstAnnotation = filterMetadata.first;
-      final constantValue = firstAnnotation.computeConstantValue();
-      if (constantValue == null) continue;
-
-      final metadata = ConstantReader(constantValue);
-      final fieldName = field.name;
-      final label = metadata.peek('label')?.stringValue ?? fieldName;
-      final isNullable = field.type.nullabilitySuffix != NullabilitySuffix.none;
-      final comparators = metadata
-          .peek('comparators')
-          ?.listValue
-          .map((v) => v.toStringValue())
-          .whereType<String>()
-          .toList();
-
-      final customCompareValue = constantValue.getField('customCompare');
-      final comparatorFuncName = customCompareValue?.toFunctionValue()?.name;
-      final comparatorsType = constantValue.getField('comparatorsType');
-
-      final comparatorTypeName = comparatorsType
-          ?.toTypeValue()
-          ?.getDisplayString(withNullability: false);
-
-      final isList = field.type.isDartCoreList;
-      final isEnum = field.type.element is EnumElement;
-
-      String? listItemType;
-      if (isList && field.type is ParameterizedType) {
-        final typeArgs = (field.type as ParameterizedType).typeArguments;
-        if (typeArgs.isNotEmpty) {
-          listItemType =
-              typeArgs.first.getDisplayString(withNullability: false);
-        }
+    // 1. Processa parâmetros do construtor (Foco em Freezed)
+    final constructor = element.unnamedConstructor;
+    if (constructor != null) {
+      for (final parameter in constructor.parameters) {
+        final info = _parseElement(parameter, parameter.type, parameter.name);
+        if (info != null) fieldsMap[parameter.name] = info;
       }
-
-      final typeName = field.type.getDisplayString(withNullability: false);
-      final ops = comparators ?? _defaultComparatorsForType(typeName, isList);
-
-      fields.add(_FilterableFieldInfo(
-        fieldName: fieldName,
-        label: label,
-        isNullable: isNullable,
-        isList: isList,
-        isEnum: isEnum,
-        typeName: typeName,
-        comparatorTypeName: comparatorTypeName,
-        comparatorFuncName: comparatorFuncName,
-        listItemType: listItemType,
-        comparators: ops,
-      ));
     }
 
-    return fields;
+    // 2. Processa campos da classe (Foco em classes padrão)
+    for (final field in element.fields) {
+      // Se já pegamos via construtor, não sobrescrevemos a menos que o campo tenha metadados próprios
+      final info = _parseElement(field, field.type, field.name);
+      if (info != null) fieldsMap[field.name] = info;
+    }
+
+    return fieldsMap.values.toList();
+  }
+
+  _FilterableFieldInfo? _parseElement(
+      Element element, DartType type, String name) {
+    final metadata = element.metadata;
+
+    final filterMetadata = metadata.where((m) {
+      final constantValue = m.computeConstantValue();
+      return constantValue?.type?.getDisplayString(withNullability: false) ==
+          'FilterableField';
+    }).toList();
+
+    if (filterMetadata.isEmpty) return null;
+
+    final constantValue = filterMetadata.first.computeConstantValue();
+    if (constantValue == null) return null;
+
+    final reader = ConstantReader(constantValue);
+
+    // Extração de propriedades
+    final label = reader.peek('label')?.stringValue ?? name;
+    final isNullable = type.nullabilitySuffix != NullabilitySuffix.none;
+    final isList = type.isDartCoreList;
+    final isEnum = type.element is EnumElement;
+
+    // Comparadores e Tipos Customizados
+    final comparators = reader
+        .peek('comparators')
+        ?.listValue
+        .map((v) => v.toStringValue())
+        .whereType<String>()
+        .toList();
+
+    final customCompareValue = constantValue.getField('customCompare');
+    final comparatorFuncName = customCompareValue?.toFunctionValue()?.name;
+
+    final comparatorsType = constantValue.getField('comparatorsType');
+    final comparatorTypeName = comparatorsType
+        ?.toTypeValue()
+        ?.getDisplayString(withNullability: false);
+
+    // Lógica para Listas
+    String? listItemType;
+    if (isList && type is ParameterizedType) {
+      final typeArgs = type.typeArguments;
+      if (typeArgs.isNotEmpty) {
+        listItemType = typeArgs.first.getDisplayString(withNullability: false);
+      }
+    }
+
+    final typeName = type.getDisplayString(withNullability: false);
+    final ops = comparators ?? _defaultComparatorsForType(typeName, isList);
+
+    return _FilterableFieldInfo(
+      fieldName: name,
+      label: label,
+      isNullable: isNullable,
+      isList: isList,
+      isEnum: isEnum,
+      typeName: typeName,
+      comparatorTypeName: comparatorTypeName,
+      comparatorFuncName: comparatorFuncName,
+      listItemType: listItemType,
+      comparators: ops,
+    );
   }
 
   void _generateBuildPredicate(
@@ -309,11 +323,9 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     }
   }
 
-  void _generateBuildSorter(
-    StringBuffer buffer,
-    String className,
-    List<_FilterableFieldInfo> fields,
-  ) {
+  void _generateBuildSorter(StringBuffer buffer,
+      String className,
+      List<_FilterableFieldInfo> fields,) {
     buffer.writeln(
         '  static int Function($className, $className) buildSorter(SortCriteria criteria) {');
     buffer.writeln('    switch (criteria.field) {');
@@ -322,24 +334,36 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
       buffer.writeln("      case '${field.fieldName}':");
 
       if (field.isList) {
+        // Ordenação por tamanho da lista
         buffer.writeln('        return (a, b) => criteria.ascending');
         buffer.writeln(
             '            ? a.${field.fieldName}.length.compareTo(b.${field.fieldName}.length)');
         buffer.writeln(
             '            : b.${field.fieldName}.length.compareTo(a.${field.fieldName}.length);');
       } else {
-        final nullCheck = field.isNullable
-            ? 'a.${field.fieldName} != null && b.${field.fieldName} != null ? '
-            : '';
-        final closingParen = field.isNullable ? ' : 0' : '';
-        final nullableSuffix = field.isNullable ? '!' : '';
-        final enumSuffix = field.isEnum ? '.index' : '';
+        // Para Enums, comparamos o .index. Para outros tipos, o valor direto.
+        final suffix = field.isEnum ? '?.index' : '';
 
-        buffer.writeln('        return (a, b) => criteria.ascending');
+        // No Freezed, campos opcionais podem ser nulos.
+        // Se um valor for nulo, tratamos como "menor que todos" usando um fallback.
+        final fallback = field.isEnum ||
+                field.typeName == 'int' ||
+                field.typeName == 'double'
+            ? '-1'
+            : 'null';
+
+        buffer.writeln('        return (a, b) {');
+        buffer.writeln('          final valA = a.${field.fieldName}$suffix;');
+        buffer.writeln('          final valB = b.${field.fieldName}$suffix;');
+        buffer.writeln('          if (valA == null && valB == null) return 0;');
         buffer.writeln(
-            '            ? ( ${nullCheck}a.${field.fieldName}$nullableSuffix$enumSuffix.compareTo(b.${field.fieldName}$nullableSuffix$enumSuffix) $closingParen )');
+            '          if (valA == null) return criteria.ascending ? -1 : 1;');
         buffer.writeln(
-            '            : ( ${nullCheck}b.${field.fieldName}$nullableSuffix$enumSuffix.compareTo(a.${field.fieldName}$nullableSuffix$enumSuffix) $closingParen );');
+            '          if (valB == null) return criteria.ascending ? 1 : -1;');
+        buffer.writeln('          return criteria.ascending');
+        buffer.writeln('              ? valA.compareTo(valB)');
+        buffer.writeln('              : valB.compareTo(valA);');
+        buffer.writeln('        };');
       }
     }
 
@@ -399,54 +423,42 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     }
   }
 
-  String _buildComparisonExpression(
-      String op, String left, String right, bool isNullable) {
-    String nullCheck = isNullable ? '($left != null && ' : '';
-    String closingParen = isNullable ? ')' : '';
+  String _buildComparisonExpression(String op,
+      String left,
+      String right,
+      bool isNullable,) {
+    // Se for nulo, a maioria das operações (exceto !=) deve retornar false.
+    // Usamos o operador '!' apenas se soubermos que o campo é nullable,
+    // para evitar warnings de "unnecessary non-null assertion".
+    final access = isNullable ? '$left!' : left;
+    final nullGuardPre = isNullable ? '($left != null && ' : '';
+    final nullGuardPost = isNullable ? ')' : '';
 
     switch (op) {
       case '==':
         return '$left == $right';
       case '!=':
+        // No caso de diferente, se o campo for nulo, ele É diferente do valor (se o valor não for nulo)
         return '$left != $right';
       case '>':
-        return '$left > $right';
+        return '$nullGuardPre $left > $right $nullGuardPost';
       case '<':
-        return '$left < $right';
+        return '$nullGuardPre $left < $right $nullGuardPost';
       case '>=':
-        return '$left >= $right';
+        return '$nullGuardPre $left >= $right $nullGuardPost';
       case '<=':
-        return '$left <= $right';
+        return '$nullGuardPre $left <= $right $nullGuardPost';
       case 'contains':
-        return '$nullCheck$left${isNullable ? "!" : ""}.contains($right)$closingParen';
+        return '$nullGuardPre $access.contains($right) $nullGuardPost';
       case 'startsWith':
-        return '$nullCheck$left${isNullable ? "!" : ""}.startsWith($right)$closingParen';
+        return '$nullGuardPre $access.startsWith($right) $nullGuardPost';
       case 'endsWith':
-        return '$nullCheck$left${isNullable ? "!" : ""}.endsWith($right)$closingParen';
+        return '$nullGuardPre $access.endsWith($right) $nullGuardPost';
       default:
         return 'false';
     }
   }
 
-  /// Gets field metadata in a way that's compatible with both analyzer versions.
-  ///
-  /// Older analyzer versions use Element with a direct `metadata` property,
-  /// while newer versions may use Element2 with different APIs.
-  /// This method abstracts the difference.
-  List<ElementAnnotation> _getFieldMetadata(FieldElement field) {
-    try {
-      // Try the standard approach first (works with most versions)
-      final metadata = field.metadata;
-
-      // Use dynamic cast to handle potential type variations across analyzer versions
-      // This ensures compatibility even when the exact return type changes
-      return (metadata as dynamic) as List<ElementAnnotation>;
-    } catch (e) {
-      // If all else fails, return empty list
-      // This shouldn't happen in practice but provides a safety net
-      return <ElementAnnotation>[];
-    }
-  }
 }
 
 /// Internal class to hold information about a filterable field.
