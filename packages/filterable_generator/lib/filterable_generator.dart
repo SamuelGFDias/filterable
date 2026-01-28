@@ -160,6 +160,7 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     final valueCastType = field.comparatorFuncName != null
         ? field.comparatorTypeName ?? field.listItemType
         : field.listItemType;
+    final typeCast = field.comparatorTypeName ?? field.typeName;
 
     buffer.writeln("          case 'contains':");
     buffer.writeln("          case 'notContains': {");
@@ -193,7 +194,10 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     const lengthOps = ['==', '!=', '>', '<', '>=', '<='];
     for (final op in lengthOps) {
       final expr = _buildComparisonExpression(op, 'e.${field.fieldName}.length',
-          'criteria.value', field.isNullable);
+        'criteria.value',
+        field.isNullable,
+        typeCast,
+      );
       buffer.writeln("          case 'length$op': return (e) => $expr;");
     }
   }
@@ -249,6 +253,8 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     String op,
     String typeCast,
   ) {
+    final typeCast = field.comparatorTypeName ?? field.typeName;
+
     buffer.writeln("              if (criteria.value is $typeCast) {");
     buffer
         .writeln("                final value = criteria.value as $typeCast;");
@@ -259,12 +265,12 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     buffer.writeln("              } else if (criteria.value is int) {");
     buffer.writeln("                final value = criteria.value as int;");
     final indexComparison = _buildComparisonExpression(
-        op, 'e.${field.fieldName}.index', 'value', field.isNullable);
+        op, 'e.${field.fieldName}.index', 'value', field.isNullable, typeCast);
     buffer.writeln("                return (e) => $indexComparison;");
     buffer.writeln("              } else {");
     buffer.writeln("                final value = criteria.value as String;");
     final nameComparison = _buildComparisonExpression(
-        op, 'e.${field.fieldName}.name', 'value', field.isNullable);
+        op, 'e.${field.fieldName}.name', 'value', field.isNullable, typeCast);
     buffer.writeln("                return (e) => $nameComparison;");
     buffer.writeln("              }");
   }
@@ -275,21 +281,23 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     String op,
     String typeCast,
   ) {
+    final typeCast = field.comparatorTypeName ?? field.typeName;
+
     buffer.writeln("              if (criteria.value is $typeCast) {");
     buffer
         .writeln("                final value = criteria.value as $typeCast;");
     final comparison = _buildComparisonExpression(
-        op, 'e.${field.fieldName}', 'value', field.isNullable);
+        op, 'e.${field.fieldName}', 'value', field.isNullable, typeCast);
     buffer.writeln("                return (e) => $comparison;");
     buffer.writeln("              } else if (criteria.value is int) {");
     buffer.writeln("                final value = criteria.value as int;");
     final indexComparison = _buildComparisonExpression(
-        op, 'e.${field.fieldName}.index', 'value', field.isNullable);
+        op, 'e.${field.fieldName}.index', 'value', field.isNullable, typeCast);
     buffer.writeln("                return (e) => $indexComparison;");
     buffer.writeln("              } else {");
     buffer.writeln("                final value = criteria.value as String;");
     final nameComparison = _buildComparisonExpression(
-        op, 'e.${field.fieldName}.name', 'value', field.isNullable);
+        op, 'e.${field.fieldName}.name', 'value', field.isNullable, typeCast);
     buffer.writeln("                return (e) => $nameComparison;");
     buffer.writeln("              }");
   }
@@ -315,7 +323,12 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
             "            if (criteria.comparator == '$op') return (e) => $comparison;");
       } else {
         final comparison = _buildComparisonExpression(
-            op, 'e.${field.fieldName}', 'value', field.isNullable);
+          op,
+          'e.${field.fieldName}',
+          'value',
+          field.isNullable,
+          typeCast,
+        );
         buffer.writeln("            if (criteria.comparator == '$op') {");
         buffer.writeln("              return (e) => $comparison;");
         buffer.writeln("            }");
@@ -430,6 +443,7 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     String left,
     String right,
     bool isNullable,
+    String typeName,
   ) {
     // Se for nulo, a maioria das operações (exceto !=) deve retornar false.
     // Usamos o operador '!' apenas se soubermos que o campo é nullable,
@@ -438,6 +452,8 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     final nullGuardPre = isNullable ? '($left != null && ' : '';
     final nullGuardPost = isNullable ? ')' : '';
 
+    final isDateTime = typeName == 'DateTime';
+
     switch (op) {
       case '==':
         return '$left == $right';
@@ -445,12 +461,24 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
         // No caso de diferente, se o campo for nulo, ele É diferente do valor (se o valor não for nulo)
         return '$left != $right';
       case '>':
+        if (isDateTime) {
+          return '$nullGuardPre $access.isAfter($right) $nullGuardPost';
+        }
         return '$nullGuardPre $left > $right $nullGuardPost';
       case '<':
+        if (isDateTime) {
+          return '$nullGuardPre $access.isBefore($right) $nullGuardPost';
+        }
         return '$nullGuardPre $left < $right $nullGuardPost';
       case '>=':
+        if (isDateTime) {
+          return '$nullGuardPre ($access.isAfter($right) || $access == $right) $nullGuardPost';
+        }
         return '$nullGuardPre $left >= $right $nullGuardPost';
       case '<=':
+        if (isDateTime) {
+          return '$nullGuardPre ($access.isBefore($right) || $access == $right) $nullGuardPost';
+        }
         return '$nullGuardPre $left <= $right $nullGuardPost';
       case 'contains':
         return '$nullGuardPre $access.contains($right) $nullGuardPost';
