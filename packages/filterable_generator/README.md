@@ -24,7 +24,7 @@ dependencies:
   filterable_annotation: ^1.0.0
 
 dev_dependencies:
-  filterable_generator: ^1.0.0
+  filterable_generator: ^1.1.3
   build_runner: ^2.4.0  # or ^2.3.0, works with multiple versions
 ```
 
@@ -43,14 +43,14 @@ dev_dependencies:
 For **maximum compatibility** (works with most other packages):
 ```yaml
 dev_dependencies:
-  filterable_generator: ^1.0.0
+  filterable_generator: ^^1.1.3
   build_runner: ^2.4.0  # Most compatible
 ```
 
 For **latest features** (newer projects):
 ```yaml
 dev_dependencies:
-  filterable_generator: ^1.0.0
+  filterable_generator: ^1.1.3
   build_runner: ^2.7.0  # Latest
 ```
 

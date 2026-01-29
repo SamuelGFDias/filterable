@@ -1,6 +1,6 @@
 name: filterable_generator
 description: Code generator for creating type-safe filter and sort functionality for Dart models. Works with build_runner and filterable_annotation.
-version: 1.1.2
+version: 1.1.3
 repository: https://github.com/SamuelGFDias/filterable
 homepage: https://github.com/SamuelGFDias/filterable
 documentation: https://github.com/SamuelGFDias/filterable/blob/main/README.md

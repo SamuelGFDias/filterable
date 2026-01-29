@@ -18,19 +18,72 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
   ) {
     if (element is! ClassElement) return '';
 
-    final className = element.name;
-    final filterableFields = _extractFilterableFields(element);
-
     final buffer = StringBuffer();
     buffer.writeln('// ignore_for_file: dead_code');
+    buffer.writeln('// ignore_for_file: unnecessary_cast');
+    buffer.writeln('// ignore_for_file: unnecessary_parenthesis');
+    buffer.writeln('// ignore_for_file: unnecessary_null_comparison');
+
+    // 1. Buscamos construtores factory (que o Freezed usa para as subclasses)
+    final factories = element.constructors.where((c) => c.isFactory).toList();
+
+    // 2. Se não houver factories com campos anotados, tratamos como classe simples
+    if (factories.isEmpty || !_hasFilterableAnnotations(factories)) {
+      final fields = _extractFilterableFields(element);
+      if (fields.isNotEmpty) {
+        _writeExtension(buffer, element.name, fields);
+      }
+    } else {
+      // 3. Caso seja Freezed Union, geramos uma extensão para cada implementação
+      for (final factory in factories) {
+        final fields = _extractFieldsFromConstructor(factory);
+        final redirectedHandle = factory.redirectedConstructor;
+
+        if (fields.isNotEmpty) {
+          final targetClassName = redirectedHandle != null
+              ? redirectedHandle.returnType
+                  .getDisplayString(withNullability: false)
+              : factory.returnType.getDisplayString(withNullability: false);
+
+          _writeExtension(buffer, targetClassName, fields);
+        }
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  /// Helper para verificar se existem anotações nos factories antes de decidir o fluxo
+  bool _hasFilterableAnnotations(List<ConstructorElement> constructors) {
+    return constructors.any((c) => c.parameters.any((p) => p.metadata.any((m) =>
+        m
+            .computeConstantValue()
+            ?.type
+            ?.getDisplayString(withNullability: false) ==
+        'FilterableField')));
+  }
+
+  /// Extrai campos especificamente de um construtor factory (Freezed Union)
+  List<_FilterableFieldInfo> _extractFieldsFromConstructor(
+      ConstructorElement constructor) {
+    final fields = <_FilterableFieldInfo>[];
+    for (final parameter in constructor.parameters) {
+      final info = _parseElement(parameter, parameter.type, parameter.name);
+      if (info != null) fields.add(info);
+    }
+    return fields;
+  }
+
+  /// Centraliza a escrita da extensão para evitar duplicação de código
+  void _writeExtension(StringBuffer buffer, String className,
+      List<_FilterableFieldInfo> fields) {
     buffer.writeln('extension ${className}FilterExtension on $className {');
 
-    _generateBuildPredicate(buffer, className, filterableFields);
-    _generateBuildSorter(buffer, className, filterableFields);
-    _generateFilterableFieldsInfo(buffer, filterableFields);
+    _generateBuildPredicate(buffer, className, fields);
+    _generateBuildSorter(buffer, className, fields);
+    _generateFilterableFieldsInfo(buffer, fields);
 
-    buffer.writeln('}');
-    return buffer.toString();
+    buffer.writeln('}\n');
   }
 
   /// Extracts filterable field information from a class element.
@@ -206,7 +259,9 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
 
     const lengthOps = ['==', '!=', '>', '<', '>=', '<='];
     for (final op in lengthOps) {
-      final expr = _buildComparisonExpression(op, 'e.${field.fieldName}.length',
+      final expr = _buildComparisonExpression(
+        op,
+        'e.${field.fieldName}.length',
         'criteria.value',
         field.isNullable,
         typeCast,
@@ -461,9 +516,9 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
     // Se for nulo, a maioria das operações (exceto !=) deve retornar false.
     // Usamos o operador '!' apenas se soubermos que o campo é nullable,
     // para evitar warnings de "unnecessary non-null assertion".
-    final access = isNullable ? '$left!' : left;
     final nullGuardPre = isNullable ? '($left != null && ' : '';
     final nullGuardPost = isNullable ? ')' : '';
+    final formattedLeft = isNullable ? '$left!' : left;
 
     final isDateTime = typeName == 'DateTime';
 
@@ -475,30 +530,30 @@ class FilterableGenerator extends GeneratorForAnnotation<Filterable> {
         return '$left != $right';
       case '>':
         if (isDateTime) {
-          return '$nullGuardPre $access.isAfter($right) $nullGuardPost';
+          return '$nullGuardPre $formattedLeft.isAfter($right) $nullGuardPost';
         }
-        return '$nullGuardPre $left > $right $nullGuardPost';
+        return '$nullGuardPre $formattedLeft > $right $nullGuardPost';
       case '<':
         if (isDateTime) {
-          return '$nullGuardPre $access.isBefore($right) $nullGuardPost';
+          return '$nullGuardPre $formattedLeft.isBefore($right) $nullGuardPost';
         }
-        return '$nullGuardPre $left < $right $nullGuardPost';
+        return '$nullGuardPre $formattedLeft < $right $nullGuardPost';
       case '>=':
         if (isDateTime) {
-          return '$nullGuardPre ($access.isAfter($right) || $access == $right) $nullGuardPost';
+          return '$nullGuardPre ($formattedLeft.isAfter($right) || $formattedLeft == $right) $nullGuardPost';
         }
-        return '$nullGuardPre $left >= $right $nullGuardPost';
+        return '$nullGuardPre $formattedLeft >= $right $nullGuardPost';
       case '<=':
         if (isDateTime) {
-          return '$nullGuardPre ($access.isBefore($right) || $access == $right) $nullGuardPost';
+          return '$nullGuardPre ($formattedLeft.isBefore($right) || $formattedLeft == $right) $nullGuardPost';
         }
-        return '$nullGuardPre $left <= $right $nullGuardPost';
+        return '$nullGuardPre $formattedLeft <= $right $nullGuardPost';
       case 'contains':
-        return '$nullGuardPre $access.contains($right) $nullGuardPost';
+        return '$nullGuardPre $formattedLeft.contains($right) $nullGuardPost';
       case 'startsWith':
-        return '$nullGuardPre $access.startsWith($right) $nullGuardPost';
+        return '$nullGuardPre $formattedLeft.startsWith($right) $nullGuardPost';
       case 'endsWith':
-        return '$nullGuardPre $access.endsWith($right) $nullGuardPost';
+        return '$nullGuardPre $formattedLeft.endsWith($right) $nullGuardPost';
       default:
         return 'false';
     }
